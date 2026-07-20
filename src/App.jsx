@@ -43,7 +43,7 @@ export default function App() {
   useEffect(() => {
     return window.crate.onAddProgress(({ done, total }) => {
       setProgress({ done, total })
-      setBusyMsg(done >= total ? 'Almost done…' : `Copying to your phone`)
+      setBusyMsg(done >= total ? 'Almost done…' : `Copying to your device`)
     })
   }, [])
 
@@ -104,6 +104,8 @@ export default function App() {
     }
     if (res.error === 'NO_DEVICE') { setPhase('setup'); return }
     if (res.error === 'LOCAL_NETWORK_BLOCKED') { setPhase('blocked'); return }
+    // set up before but unreachable now: offer to reconnect, don't restart setup
+    if (res.error === 'DEVICE_UNREACHABLE') { setConnError('Crate lost the connection to your device.'); setPhase('error'); return }
     // quietly retry a transient WiFi-doze failure before showing an error
     if (attempt < 2) {
       await new Promise((r) => setTimeout(r, 900))
@@ -312,7 +314,7 @@ export default function App() {
   const deleteSelected = async () => {
     const paths = [...selected]
     if (!paths.length) return
-    if (!window.confirm(`Delete ${fmtCount(paths.length, 'track')} from your phone? This removes the file${paths.length > 1 ? 's' : ''} for good.`)) return
+    if (!window.confirm(`Delete ${fmtCount(paths.length, 'track')} from your device? This removes the file${paths.length > 1 ? 's' : ''} for good.`)) return
     setSelected(new Set())
     await removePaths(paths, fmtCount(paths.length, 'track'))
   }
@@ -326,7 +328,7 @@ export default function App() {
     const sel = selectedAlbums()
     const paths = sel.flatMap((a) => a.tracks.map((t) => t.path))
     if (!paths.length) return
-    if (!window.confirm(`Delete ${fmtCount(sel.length, 'album')} (${fmtCount(paths.length, 'track')}) from your phone?`)) return
+    if (!window.confirm(`Delete ${fmtCount(sel.length, 'album')} (${fmtCount(paths.length, 'track')}) from your device?`)) return
     exitSelect()
     await removePaths(paths, fmtCount(sel.length, 'album'))
   }
@@ -367,7 +369,7 @@ export default function App() {
 
   const deleteAlbum = async (album) => {
     if (!album) return
-    if (!window.confirm(`Delete the whole album “${album.album}” (${fmtCount(album.tracks.length, 'track')}) from your phone? This is permanent.`)) return
+    if (!window.confirm(`Delete the whole album “${album.album}” (${fmtCount(album.tracks.length, 'track')}) from your device? This is permanent.`)) return
     if (openAlbum && openAlbum.key === album.key) setOpenAlbum(null)
     await removePaths(album.tracks.map((t) => t.path), `“${album.album}”`)
   }
@@ -424,7 +426,7 @@ export default function App() {
         <div className="center-stage">
           <div style={{ textAlign: 'center', color: 'var(--ink-dim)' }}>
             <span className="spinner" style={{ width: 22, height: 22 }} />
-            <div style={{ marginTop: 14 }}>Looking for your phone on the network…</div>
+            <div style={{ marginTop: 14 }}>Looking for your device on the network…</div>
           </div>
         </div>
       </div>
@@ -447,7 +449,7 @@ export default function App() {
         <div className="center-stage">
           <div className="card" onClick={(e) => e.stopPropagation()}>
             <h2>One quick macOS permission</h2>
-            <p className="lede">macOS is blocking Crate from reaching your phone over WiFi. Turn Crate on under Local Network and it will connect.</p>
+            <p className="lede">macOS is blocking Crate from reaching your device over WiFi. Turn Crate on under Local Network and it will connect.</p>
             <ol className="steps">
               <li><span className="n">1</span><div>Open <b>System Settings</b>, then <b>Privacy &amp; Security</b>, then <b>Local Network</b>.</div></li>
               <li><span className="n">2</span><div>Switch <b>Crate</b> on in the list.</div></li>
@@ -470,8 +472,8 @@ export default function App() {
         <TitleBar connected={false} />
         <div className="center-stage">
           <div className="card" onClick={(e) => e.stopPropagation()}>
-            <h2>Can’t reach your phone</h2>
-            <p className="lede">{connError || 'The connection dropped.'} Check that your phone is awake, on the same WiFi as this Mac, and that wireless debugging is still on.</p>
+            <h2>Can’t reach your device</h2>
+            <p className="lede">{connError || 'The connection dropped.'} Check that your device is awake and on the same WiFi as this Mac. If it has restarted since you set it up, plug the cable in once and Crate will turn wireless back on.</p>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn accent" onClick={() => attemptConnect()}>Try again</button>
               <button className="btn" onClick={() => setPhase('setup')}>Set up again</button>
@@ -525,7 +527,7 @@ export default function App() {
             filtered.length === 0 && !loadingLib ? (
               <div className="empty">
                 <div className="big">{query ? 'Nothing matches' : 'No music yet'}</div>
-                <div>{query ? 'Try another search.' : 'Drag FLAC files or folders anywhere to send them to your phone.'}</div>
+                <div>{query ? 'Try another search.' : 'Drag FLAC files or folders anywhere to send them to your device.'}</div>
               </div>
             ) : view === 'grid' ? (
               <div className="grid">
@@ -624,7 +626,7 @@ export default function App() {
                   const pct = (b) => (b / storage.total) * 100 + '%'
                   return (
                     <div className="panel">
-                      <div className="stat-h">Phone storage</div>
+                      <div className="stat-h">Device storage</div>
                       <div className="storage-stack">
                         <div className="seg music" style={{ width: pct(music) }} />
                         <div className="seg other" style={{ width: pct(other) }} />
@@ -749,7 +751,7 @@ export default function App() {
       <div className={`drop-veil ${dropping ? 'show' : ''}`}>
         <div className="box">
           <div className="big">Drop to add</div>
-          <div className="small">Files land on your phone and show up in Poweramp</div>
+          <div className="small">Files land on your device and show up in Poweramp</div>
         </div>
       </div>
 
@@ -759,11 +761,24 @@ export default function App() {
   )
 }
 
+// turn a device path into something readable: internal aliases and the SD volume id
+function prettyRoot(p) {
+  if (!p) return ''
+  if (p.startsWith('/storage/emulated/0')) return 'Internal storage' + p.slice('/storage/emulated/0'.length)
+  if (p.startsWith('/sdcard')) return 'Internal storage' + p.slice('/sdcard'.length)
+  const m = p.match(/^\/storage\/[^/]+(.*)$/)
+  if (m) return 'SD card' + m[1]
+  return p
+}
+
 function Settings({ onClose, toast, onReSetup }) {
   const [root, setRoot] = useState('')
   const [saved, setSaved] = useState('')
+  const [auto, setAuto] = useState(false)
   const [watch, setWatch] = useState(null)
-  useEffect(() => { window.crate.getSettings().then((r) => { if (r.ok) { setRoot(r.data.musicRoot); setSaved(r.data.musicRoot); setWatch(r.data.watchFolder) } }) }, [])
+  const [manual, setManual] = useState(false)
+  const [picking, setPicking] = useState(false)
+  useEffect(() => { window.crate.getSettings().then((r) => { if (r.ok) { setRoot(r.data.musicRoot); setSaved(r.data.musicRoot); setAuto(r.data.musicRootAuto); setWatch(r.data.watchFolder) } }) }, [])
   const chooseWatch = async () => { const r = await window.crate.chooseWatchFolder(); if (r.ok) { setWatch(r.data.watchFolder); if (r.data.watchFolder) toast('Watching for new music') } }
   const clearWatch = async () => { const r = await window.crate.clearWatchFolder(); if (r.ok) setWatch(null) }
   const save = async () => {
@@ -773,21 +788,35 @@ function Settings({ onClose, toast, onReSetup }) {
   }
   return (
     <>
+      {picking && <FolderPicker start={root} onClose={() => setPicking(false)} onPick={(p) => { setRoot(p); setAuto(false); setPicking(false) }} />}
       <div className="drawer-scrim open" onClick={onClose} />
       <div className="center-stage" style={{ position: 'fixed', inset: 0, zIndex: 30 }} onClick={onClose}>
         <div className="card">
           <h2>Settings</h2>
           <div className="field">
-            <label>Music folder on phone</label>
-            <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="/sdcard/Music" spellCheck={false} />
-            <span className="field-hint">Where new music lands. Most phones use /sdcard/Music. Change it if yours keeps music on an SD card.</span>
+            <label>Music folder on device</label>
+            <div className="folder-pick">
+              <div className="folder-cur">
+                <span className="folder-cur-ic"><Icon.folder /></span>
+                <span className="folder-cur-path" title={root}>{prettyRoot(root) || '/sdcard/Music'}</span>
+                {auto && root === saved && <span className="folder-auto">auto</span>}
+              </div>
+              <button className="btn" onClick={() => setPicking(true)}>Change…</button>
+            </div>
+            <span className="field-hint">
+              Where new music lands. Crate picks a sensible spot for your device, and players with an SD card default to it.{' '}
+              <button className="linklike" onClick={() => setManual((m) => !m)}>{manual ? 'Hide manual path' : 'Or set the path manually'}</button>
+            </span>
+            {manual && (
+              <input style={{ marginTop: 8 }} value={root} onChange={(e) => { setRoot(e.target.value); setAuto(false) }} placeholder="/sdcard/Music" spellCheck={false} />
+            )}
           </div>
           <div className="settings-sep" />
           <div className="setting-row">
             <div style={{ minWidth: 0 }}>
               <div className="setting-row-title">Watch a folder</div>
               <div className="setting-row-sub" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {watch ? `Auto-adds new music from ${watch.split('/').pop()}` : 'Anything you drop in it auto-syncs to your phone.'}
+                {watch ? `Auto-adds new music from ${watch.split('/').pop()}` : 'Anything you drop in it auto-syncs to your device.'}
               </div>
             </div>
             {watch
@@ -797,7 +826,7 @@ function Settings({ onClose, toast, onReSetup }) {
           <div className="settings-sep" />
           <div className="setting-row">
             <div>
-              <div className="setting-row-title">Connect a different phone</div>
+              <div className="setting-row-title">Connect a different device</div>
               <div className="setting-row-sub">Run the setup wizard again.</div>
             </div>
             <button className="btn" onClick={onReSetup}>Set up</button>
@@ -805,6 +834,79 @@ function Settings({ onClose, toast, onReSetup }) {
           <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
             <button className="btn accent" onClick={save} disabled={!root.trim().startsWith('/') || root === saved}>Save</button>
             <button className="btn" onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// browse the phone's storage to pick where music goes: volumes first (Internal,
+// SD card), then drill into folders. null dir = the volume list
+function FolderPicker({ start, onClose, onPick }) {
+  const [dir, setDir] = useState(null)
+  const [vols, setVols] = useState([])
+  const [dirs, setDirs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true); setErr('')
+    const load = dir == null
+      ? window.crate.listVolumes().then((r) => { if (alive) setVols(r.ok ? r.data : []) })
+      : window.crate.listDirs(dir).then((r) => { if (alive) { if (r.ok) setDirs(r.data); else setErr(r.error || 'Could not read that folder') } })
+    load.finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [dir])
+
+  const up = () => {
+    if (dir == null) return
+    const parent = dir.replace(/\/[^/]+$/, '')
+    const atVolRoot = /^\/storage\/[^/]+$/.test(dir) || dir === '/sdcard' || dir === '/storage/emulated/0'
+    setDir(atVolRoot || !parent ? null : parent)
+  }
+
+  return (
+    <>
+      <div className="drawer-scrim open" style={{ zIndex: 40 }} onClick={onClose} />
+      <div className="center-stage" style={{ position: 'fixed', inset: 0, zIndex: 41 }} onClick={onClose}>
+        <div className="card fpick" onClick={(e) => e.stopPropagation()}>
+          <h2>Choose music folder</h2>
+          <div className="fpick-crumb">
+            <button className="linklike" onClick={() => setDir(null)}>Storage</button>
+            {dir != null && <><span className="fpick-sep">›</span><span className="fpick-here" title={dir}>{prettyRoot(dir)}</span></>}
+          </div>
+          <div className="fpick-list">
+            {loading ? (
+              <div className="fpick-empty"><span className="spinner" /> Reading…</div>
+            ) : err ? (
+              <div className="fpick-empty">{err}</div>
+            ) : dir == null ? (
+              vols.map((v) => (
+                <button key={v.path} className="fpick-row" onClick={() => setDir(v.path)}>
+                  <span className="fpick-ic"><Icon.folder /></span>
+                  <span className="fpick-name">{v.label}</span>
+                  <span className="fpick-go"><Icon.chevron /></span>
+                </button>
+              ))
+            ) : dirs.length === 0 ? (
+              <div className="fpick-empty">No sub-folders here. You can still use this folder.</div>
+            ) : (
+              dirs.map((d) => (
+                <button key={d.path} className="fpick-row" onClick={() => setDir(d.path)}>
+                  <span className="fpick-ic"><Icon.folder /></span>
+                  <span className="fpick-name">{d.name}</span>
+                  <span className="fpick-go"><Icon.chevron /></span>
+                </button>
+              ))
+            )}
+          </div>
+          <div className="fpick-actions">
+            {dir != null && <button className="btn" onClick={up}>Up</button>}
+            <span style={{ flex: 1 }} />
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn accent" disabled={dir == null} onClick={() => onPick(dir)}>Use this folder</button>
           </div>
         </div>
       </div>
@@ -836,7 +938,7 @@ function ContextMenu({ x, y, onPlay, onShuffle, onDetails, onSelect, onSave, onD
       <button className="ctx-item" onClick={onSelect}><span className="cglyph"><Icon.check /></span>Select</button>
       <button className="ctx-item" onClick={onSave}><span className="cglyph"><Icon.download /></span>Save to Mac</button>
       <div className="ctx-sep" />
-      <button className="ctx-item danger" onClick={onDelete}><span className="cglyph"><Icon.trash /></span>Delete from phone</button>
+      <button className="ctx-item danger" onClick={onDelete}><span className="cglyph"><Icon.trash /></span>Delete from device</button>
     </div>
   )
 }
@@ -848,7 +950,7 @@ function PermissionGate({ onClose, onRetry }) {
       <div className="center-stage" style={{ position: 'fixed', inset: 0, zIndex: 30 }} onClick={onClose}>
         <div className="card">
           <h2>One macOS permission</h2>
-          <p className="lede">macOS is blocking Crate from reaching your phone over the network. Grant it once and wireless works from then on.</p>
+          <p className="lede">macOS is blocking Crate from reaching your device over the network. Grant it once and wireless works from then on.</p>
           <ol className="steps">
             <li><span className="n">1</span><div>Open <b>System Settings → Privacy &amp; Security → Local Network</b>.</div></li>
             <li><span className="n">2</span><div>Turn <b>Crate</b> on in the list.</div></li>

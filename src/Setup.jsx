@@ -32,8 +32,15 @@ const BRANDS = {
       'Settings › System › Developer options › turn on USB debugging',
     ],
   },
+  dap: {
+    name: 'Music player or DAP (FiiO, HiBy, Shanling, Sony)',
+    steps: [
+      'Settings › About (or System › About) › tap the Build number or Version 7 times',
+      'Open the new Developer options menu and turn on USB debugging',
+    ],
+  },
   other: {
-    name: 'Another Android phone',
+    name: 'Another Android device',
     steps: [
       'Find Build number in Settings (usually under About phone) and tap it 7 times',
       'Open the new Developer options menu and turn on USB debugging',
@@ -98,10 +105,10 @@ export default function Setup({ onConnected }) {
   if (step === 0) {
     body = (<>
       <h2>Welcome to Crate</h2>
-      <p className="lede">Your phone’s music, on your Mac. Connecting takes about a minute, and you only do it once.</p>
+      <p className="lede">Your device’s music, on your Mac. Connecting takes about a minute, and you only do it once.</p>
       <ul className="wfeatures">
         <li><span className="wf-ic"><Icon.grid /></span><div><b>Your whole collection</b><span>Every album, cover art and all</span></div></li>
-        <li><span className="wf-ic"><Icon.play /></span><div><b>Play on your Mac</b><span>Preview any track before you touch the phone</span></div></li>
+        <li><span className="wf-ic"><Icon.play /></span><div><b>Play on your Mac</b><span>Preview any track before you touch the device</span></div></li>
         <li><span className="wf-ic"><Icon.plus /></span><div><b>Drag to add</b><span>Drop files or whole folders to send them over</span></div></li>
       </ul>
     </>)
@@ -109,8 +116,8 @@ export default function Setup({ onConnected }) {
   } else if (step === 1) {
     body = (<>
       <h2>Turn on USB debugging</h2>
-      <p className="lede">This is how your Mac talks to your phone.</p>
-      <label className="wlabel">Which phone do you have?</label>
+      <p className="lede">This is how your Mac talks to your device.</p>
+      <label className="wlabel">Which device do you have?</label>
       <div className="wselect">
         <select value={brand} onChange={(e) => setBrand(e.target.value)}>
           {Object.entries(BRANDS).map(([k, b]) => <option key={k} value={k}>{b.name}</option>)}
@@ -125,19 +132,19 @@ export default function Setup({ onConnected }) {
     </>)
   } else if (step === 2) {
     body = (<>
-      <h2>Plug in your phone</h2>
+      <h2>Plug in your device</h2>
       <p className="lede">Connect it to this Mac with a USB cable. You only need the cable for setup.</p>
       <div className="wstatus">
         {unauth
-          ? <><span className="dot off" /><span>Your phone is asking to trust this Mac. Tap <b>Allow</b> on its screen and check “Always allow”.</span></>
-          : <><span className="spinner" /><span>Waiting for your phone…</span></>}
+          ? <><span className="dot off" /><span>Your device is asking to trust this Mac. Tap <b>Allow</b> on its screen and check “Always allow”.</span></>
+          : <><span className="spinner" /><span>Waiting for your device…</span></>}
       </div>
     </>)
     actions = <button className="btn" onClick={() => setStep(1)}>Back</button>
   } else if (step === 3 && wireless.state === 'blocked') {
     body = (<>
       <h2>One quick permission</h2>
-      <p className="lede">macOS is blocking Crate from reaching your phone. Grant it once and wireless works from here on.</p>
+      <p className="lede">macOS is blocking Crate from reaching your device. Grant it once and wireless works from here on.</p>
       <Steps items={['Open Privacy & Security › Local Network and turn Crate on', 'Come back and press Try again (keep the cable in until it connects)']} />
     </>)
     actions = (<>
@@ -147,7 +154,7 @@ export default function Setup({ onConnected }) {
   } else if (step === 3) {
     body = (<>
       <h2>Go wireless</h2>
-      <p className="lede">Your phone is connected over USB. Switch to WiFi so you can unplug the cable. Crate reconnects on its own next time.</p>
+      <p className="lede">Your device is connected over USB. Switch to WiFi so you can unplug the cable. Crate reconnects on its own next time.</p>
       {wireless.state === 'error' && <div className="msg err">{wireless.error}</div>}
     </>)
     actions = (<>

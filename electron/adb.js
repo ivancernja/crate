@@ -160,7 +160,7 @@ async function enableWireless(usbSerial) {
   if (existing) return { endpoint: existing }
 
   const ip = await phoneWifiIp(usbSerial)
-  if (!ip) throw new Error('Your phone is not on WiFi. Connect it to the same network as this Mac.')
+  if (!ip) throw new Error('Your device is not on WiFi. Connect it to the same network as this Mac.')
   await adb(['-s', usbSerial, 'tcpip', '5555'], { timeout: 15000 })
   await sleep(2500) // adbd restarts
   const endpoint = `${ip}:5555`
@@ -175,7 +175,7 @@ async function enableWireless(usbSerial) {
     }
     await sleep(1500)
   }
-  throw new Error(lastErr ? lastErr.message : `Could not reach the phone at ${endpoint}`)
+  throw new Error(lastErr ? lastErr.message : `Could not reach the device at ${endpoint}`)
 }
 
 async function listDevices() {
@@ -206,6 +206,51 @@ async function storage(serial) {
   const used = parseInt(nums[1], 10) * 1024
   const free = parseInt(nums[2], 10) * 1024
   return total ? { total, used, free } : null
+}
+
+// storage volumes the user can point new music at: internal, plus any SD card or
+// USB drive. SD/USB mount under /storage as an id like 1A2B-3C4D (no spaces, so
+// ls is safe here); /storage/emulated and /storage/self are the internal aliases
+async function listVolumes(serial) {
+  const vols = [{ label: 'Internal storage', path: '/sdcard', kind: 'internal' }]
+  const out = await adb(['-s', serial, 'exec-out', 'ls', '/storage'], { timeout: 15000 }).catch(() => '')
+  const names = out.split(/\s+/).map((s) => s.trim()).filter(Boolean)
+  const extra = names.filter((n) => n !== 'emulated' && n !== 'self')
+  extra.forEach((n, i) => {
+    vols.push({ label: extra.length > 1 ? `SD card ${i + 1}` : 'SD card', path: `/storage/${n}`, kind: 'sd' })
+  })
+  return vols
+}
+
+// list immediate sub-folders of a directory for the folder picker. find (not ls)
+// emits raw paths, so folder names with spaces come back intact
+async function listDirs(serial, dir) {
+  const out = await adb(['-s', serial, 'exec-out', 'find', dir, '-maxdepth', '1', '-type', 'd'], { timeout: 15000 }).catch(() => '')
+  const base = (p) => p.slice(p.lastIndexOf('/') + 1)
+  return out
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((p) => p !== dir && !base(p).startsWith('.'))
+    .sort((a, b) => base(a).localeCompare(base(b)))
+    .map((p) => ({ name: base(p), path: p }))
+}
+
+// dedicated music players tend to keep their library on the SD card, so when one
+// is present on such a device, suggest its Music folder instead of internal
+const DAP_BRANDS = /fiio|hiby|shanling|sony|walkman|ibasso|iriver|iaudio|cowon|astell|cayin|hidizs|tempotec|surfans|activo/i
+async function defaultMusicRoot(serial) {
+  let brand = ''
+  try {
+    brand = (await adb(['-s', serial, 'shell', 'getprop', 'ro.product.manufacturer'], { timeout: 8000 })).trim()
+    if (!brand) brand = (await adb(['-s', serial, 'shell', 'getprop', 'ro.product.brand'], { timeout: 8000 })).trim()
+    if (!brand) brand = (await adb(['-s', serial, 'shell', 'getprop', 'ro.product.model'], { timeout: 8000 })).trim()
+  } catch { /* fall back to internal */ }
+  if (DAP_BRANDS.test(brand)) {
+    const sd = (await listVolumes(serial)).find((v) => v.kind === 'sd')
+    if (sd) return `${sd.path}/Music`
+  }
+  return MUSIC_ROOT
 }
 
 async function onlineSerials() {
@@ -565,6 +610,9 @@ module.exports = {
   enableWireless,
   listDevices,
   storage,
+  listVolumes,
+  listDirs,
+  defaultMusicRoot,
   phoneWifiIp,
   ensureConnected,
   onlineSerials,

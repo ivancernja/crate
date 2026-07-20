@@ -5,7 +5,9 @@ const path = require('path')
 const { app } = require('electron')
 
 const FILE = path.join(app.getPath('userData'), 'crate.json')
-const DEFAULTS = { endpoint: null, lastConnectedAt: null, musicRoot: '/sdcard/Music', watchFolder: null }
+// musicRoot null means "not chosen yet" so we can auto-detect a device-aware
+// default on connect and still let the user override it
+const DEFAULTS = { endpoint: null, lastConnectedAt: null, musicRoot: null, watchFolder: null }
 
 function read() {
   try {

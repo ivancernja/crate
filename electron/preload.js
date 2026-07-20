@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('crate', {
   status: () => invoke('status'),
   list: () => invoke('list'),
   storage: () => invoke('storage'),
+  listVolumes: () => invoke('list-volumes'),
+  listDirs: (dir) => invoke('list-dirs', dir),
   art: (remotePath) => invoke('art', remotePath),
   albumInfo: (opts) => invoke('album-info', opts),
   saveToMac: (opts) => invoke('save-to-mac', opts),

@@ -12,6 +12,12 @@ const metadata = require('./metadata')
 
 let serial = null
 let transport = null // 'usb' | 'wifi'
+let autoRoot = null // device-aware default music folder, until the user sets one
+
+// where new music lands: the user's choice, else the auto-detected default
+function currentRoot() {
+  return store.read().musicRoot || autoRoot || adb.MUSIC_ROOT
+}
 
 // localhost HTTP server that pipes track bytes straight off the phone with `dd`,
 // so playback starts fast instead of downloading the whole FLAC first. Range
@@ -176,7 +182,7 @@ function startWatch() {
   } catch { /* folder gone */ }
 }
 async function scanWatch() {
-  const { watchFolder, musicRoot } = store.read()
+  const { watchFolder } = store.read()
   if (!watchFolder || !serial) return
   let entries
   try { entries = fs.readdirSync(watchFolder) } catch { return }
@@ -185,7 +191,7 @@ async function scanWatch() {
   fresh.forEach((e) => watchSeen.add(e))
   const paths = fresh.map((e) => path.join(watchFolder, e))
   try {
-    const res = await adb.pushPaths(serial, paths, null, musicRoot || adb.MUSIC_ROOT)
+    const res = await adb.pushPaths(serial, paths, null, currentRoot())
     if (res.added && win && !win.isDestroyed()) win.webContents.send('watch-pushed', { added: res.added })
   } catch { /* ignore */ }
 }
@@ -194,6 +200,24 @@ async function scanWatch() {
 function ok(data) { return { ok: true, data } }
 function fail(e) { return { ok: false, error: e && e.message ? e.message : String(e) } }
 const toUrl = (p) => (p ? 'crate://file/' + encodeURIComponent(p) : null)
+
+// a wireless transport can drop mid-session (the phone dozes, the SD radio sleeps,
+// or the endpoint changes), after which every command fails with "device not found".
+// run adb work through here: on a dropped-transport error, reconnect once and retry
+const DROPPED = /device .*not found|no devices\/emulators|device offline|connection reset|broken pipe|closed|protocol fault|failed to (get feature set|read)/i
+async function withDevice(fn) {
+  if (!serial) throw new Error('NO_DEVICE')
+  try {
+    return await fn(serial)
+  } catch (e) {
+    if (!DROPPED.test(e && e.message ? e.message : '')) throw e
+    const { serial: s, endpoint } = await adb.ensureConnected(store.read().endpoint)
+    serial = s
+    transport = /:\d+$/.test(s) ? 'wifi' : 'usb'
+    if (endpoint) store.write({ endpoint, lastConnectedAt: Date.now() })
+    return await fn(serial)
+  }
+}
 
 ipcMain.handle('connect', async () => {
   try {
@@ -216,8 +240,14 @@ ipcMain.handle('connect', async () => {
 
     serial = s
     if (endpoint) store.write({ endpoint, lastConnectedAt: Date.now() })
+    // pick a sensible music folder for this device (SD card on DAPs) until the
+    // user sets one; best-effort, so a slow probe never blocks connecting
+    if (!store.read().musicRoot) adb.defaultMusicRoot(s).then((r) => { autoRoot = r }).catch(() => {})
     return ok({ serial: s, endpoint, transport })
   } catch (e) {
+    // was set up before but can't be reached now (dropped WiFi, phone rebooted):
+    // ask to reconnect rather than dropping back to first-time setup
+    if (e && e.message === 'NO_DEVICE' && store.read().endpoint) return fail(new Error('DEVICE_UNREACHABLE'))
     return fail(e)
   }
 })
@@ -230,7 +260,7 @@ ipcMain.handle('go-wireless', async () => {
   try {
     const devs = await adb.listDevices()
     const usb = devs.find((d) => d.transport === 'usb' && d.state === 'device')
-    if (!usb) throw new Error('Plug your phone in with a USB cable first.')
+    if (!usb) throw new Error('Plug your device in with a USB cable first.')
     const { endpoint } = await adb.enableWireless(usb.serial)
     serial = endpoint
     transport = 'wifi'
@@ -251,27 +281,23 @@ ipcMain.handle('status', async () => {
 })
 
 ipcMain.handle('storage', async () => {
-  try { if (!serial) throw new Error('NO_DEVICE'); return ok(await adb.storage(serial)) } catch (e) { return fail(e) }
+  try { return ok(await withDevice((s) => adb.storage(s))) } catch (e) { return fail(e) }
 })
 
 ipcMain.handle('list', async () => {
-  try {
-    if (!serial) throw new Error('NO_DEVICE')
-    const tracks = await adb.listTracks(serial)
-    return ok(tracks)
-  } catch (e) {
-    return fail(e)
-  }
+  try { return ok(await withDevice((s) => adb.listTracks(s))) } catch (e) { return fail(e) }
 })
 
 ipcMain.handle('art', async (_e, remotePath) => {
-  try {
-    if (!serial) throw new Error('NO_DEVICE')
-    const p = await adb.getArt(serial, remotePath)
-    return ok(toUrl(p))
-  } catch (e) {
-    return fail(e)
-  }
+  try { return ok(toUrl(await withDevice((s) => adb.getArt(s, remotePath)))) } catch (e) { return fail(e) }
+})
+
+ipcMain.handle('list-volumes', async () => {
+  try { return ok(await withDevice((s) => adb.listVolumes(s))) } catch (e) { return fail(e) }
+})
+
+ipcMain.handle('list-dirs', async (_e, dir) => {
+  try { return ok(await withDevice((s) => adb.listDirs(s, dir || '/sdcard'))) } catch (e) { return fail(e) }
 })
 
 ipcMain.handle('track-url', async (_e, { path: remotePath, size }) => {
@@ -398,15 +424,15 @@ ipcMain.handle('album-info', async (_e, { artist, album }) => {
 
 ipcMain.handle('get-settings', async () => {
   const s = store.read()
-  return ok({ musicRoot: s.musicRoot, watchFolder: s.watchFolder })
+  return ok({ musicRoot: currentRoot(), musicRootAuto: !s.musicRoot, watchFolder: s.watchFolder })
 })
 ipcMain.handle('set-settings', async (_e, patch) => {
   const clean = {}
   if (typeof patch.musicRoot === 'string' && patch.musicRoot.trim().startsWith('/')) {
     clean.musicRoot = patch.musicRoot.trim().replace(/\/+$/, '')
   }
-  const s = store.write(clean)
-  return ok({ musicRoot: s.musicRoot, watchFolder: s.watchFolder })
+  store.write(clean)
+  return ok({ musicRoot: currentRoot(), musicRootAuto: !store.read().musicRoot, watchFolder: store.read().watchFolder })
 })
 
 ipcMain.handle('choose-watch-folder', async () => {
@@ -426,11 +452,9 @@ ipcMain.handle('clear-watch-folder', async () => {
 
 ipcMain.handle('add', async (_e, localPaths) => {
   try {
-    if (!serial) throw new Error('NO_DEVICE')
-    const root = store.read().musicRoot || adb.MUSIC_ROOT
-    const res = await adb.pushPaths(serial, localPaths, (done, total) => {
+    const res = await withDevice((s) => adb.pushPaths(s, localPaths, (done, total) => {
       if (win && !win.isDestroyed()) win.webContents.send('add-progress', { done, total })
-    }, root)
+    }, currentRoot()))
     return ok(res)
   } catch (e) {
     return fail(e)
@@ -440,16 +464,14 @@ ipcMain.handle('add', async (_e, localPaths) => {
 ipcMain.handle('add-dialog', async () => {
   try {
     const res = await dialog.showOpenDialog(win, {
-      title: 'Add music to your phone',
+      title: 'Add music to your device',
       message: 'Pick audio files or whole album folders',
       properties: ['openFile', 'openDirectory', 'multiSelections'],
     })
     if (res.canceled) return ok({ added: 0, found: 0 })
-    if (!serial) throw new Error('NO_DEVICE')
-    const root = store.read().musicRoot || adb.MUSIC_ROOT
-    const out = await adb.pushPaths(serial, res.filePaths, (done, total) => {
+    const out = await withDevice((s) => adb.pushPaths(s, res.filePaths, (done, total) => {
       if (win && !win.isDestroyed()) win.webContents.send('add-progress', { done, total })
-    }, root)
+    }, currentRoot()))
     return ok(out)
   } catch (e) {
     return fail(e)
@@ -461,8 +483,7 @@ let delSeq = 0
 
 ipcMain.handle('delete', async (_e, remotePaths) => {
   try {
-    if (!serial) throw new Error('NO_DEVICE')
-    const items = await adb.softDelete(serial, remotePaths)
+    const items = await withDevice((s) => adb.softDelete(s, remotePaths))
     const id = String(++delSeq)
     // purge from the phone's trash once the undo window passes
     const timer = setTimeout(() => { adb.purgeDeleted(serial, items).catch(() => {}); delete pendingDeletes[id] }, 12000)

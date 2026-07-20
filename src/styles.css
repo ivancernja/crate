@@ -583,6 +583,45 @@ button {
 .setting-row-title { font-size: 13px; }
 .setting-row-sub { font-size: 11.5px; color: var(--ink-faint); margin-top: 2px; }
 
+/* inline link styled as text, for "or set it manually" and picker breadcrumbs */
+.linklike { color: var(--accent); font: inherit; padding: 0; background: none; border: none; cursor: pointer; }
+.linklike:hover { text-decoration: underline; }
+
+/* music-folder chooser in Settings */
+.folder-pick { display: flex; align-items: center; gap: 10px; }
+.folder-cur {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+  background: var(--bg); border: 1px solid var(--line-strong); border-radius: var(--r); padding: 8px 11px;
+}
+.folder-cur-ic { color: var(--ink-faint); display: inline-flex; flex: 0 0 auto; }
+.folder-cur-path { font-family: var(--mono); font-size: 12.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.folder-auto {
+  flex: 0 0 auto; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--accent); background: var(--accent-soft); border-radius: var(--r-sm); padding: 2px 6px;
+}
+
+/* folder picker modal */
+.card.fpick { width: 440px; max-width: calc(100vw - 40px); }
+.fpick-crumb { display: flex; align-items: center; gap: 7px; font-size: 12.5px; margin-bottom: 12px; }
+.fpick-sep { color: var(--ink-faint); }
+.fpick-here { font-family: var(--mono); color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fpick-list {
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--bg);
+  max-height: 300px; overflow-y: auto; min-height: 120px;
+}
+.fpick-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 10px 12px; color: var(--ink); font: inherit; background: none; border: none;
+  border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.fpick-row:last-child { border-bottom: none; }
+.fpick-row:hover { background: var(--panel-2); }
+.fpick-ic { color: var(--accent); display: inline-flex; flex: 0 0 auto; }
+.fpick-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fpick-go { color: var(--ink-faint); display: inline-flex; flex: 0 0 auto; }
+.fpick-empty { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink-faint); font-size: 12.5px; padding: 40px 16px; text-align: center; }
+.fpick-actions { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+
 /* ---------------------------------------------------------------- wizard v2 (overrides v1) */
 .card.wizard {
   width: 440px; min-height: 500px; padding: 24px 26px;
