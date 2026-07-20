@@ -1,0 +1,54 @@
+{
+  "name": "crate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "See your phone's music collection on your Mac. Drag to add, delete to remove — all over WiFi.",
+  "author": "Ivan",
+  "main": "electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && cross-env CRATE_DEV=1 electron .",
+    "build": "vite build",
+    "start": "electron .",
+    "fetch-adb": "node scripts/fetch-adb.mjs",
+    "pack": "npm run fetch-adb && vite build && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "dist": "npm run fetch-adb && vite build && electron-builder"
+  },
+  "build": {
+    "appId": "com.crate.app",
+    "productName": "Crate",
+    "files": ["electron/**", "dist/**", "package.json"],
+    "extraResources": [{ "from": "vendor/adb", "to": "adb" }],
+    "mac": {
+      "category": "public.app-category.music",
+      "icon": "build/icon.icns",
+      "target": ["dmg"],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Crate connects to your phone over WiFi to show your music and send tracks to it.",
+        "NSBonjourServices": ["_adb-tls-connect._tcp", "_adb-tls-pairing._tcp", "_adb._tcp"]
+      }
+    },
+    "dmg": { "title": "Crate", "backgroundColor": "#121316" }
+  },
+  "dependencies": {
+    "music-metadata": "^10.6.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "vite": "^6.0.7",
+    "wait-on": "^8.0.1"
+  }
+}
