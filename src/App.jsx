@@ -250,6 +250,17 @@ export default function App() {
     }
   }, [])
 
+  // Refresh does a deep rescan: MediaStore (what Crate reads) lags behind files
+  // added by other apps, so scan the device for anything it hasn't indexed yet
+  const rescanLibrary = useCallback(async () => {
+    setBusyMsg('Scanning your device for new music…'); setProgress(null)
+    const res = await window.crate.rescan()
+    setBusyMsg('')
+    if (!res.ok) { toast(res.error || 'Rescan failed', 'err'); return }
+    if (res.data.scanned > 0) { toast(`Found ${fmtCount(res.data.scanned, 'new track')}, indexing…`); settleLibrary() }
+    else { refreshLibrary() }
+  }, [toast, settleLibrary, refreshLibrary])
+
   useEffect(() => window.crate.onWatchPushed(({ added }) => {
     if (added) { toast(`Auto-added ${fmtCount(added, 'track')} from your watched folder`); settleLibrary() }
   }), [settleLibrary, toast])
@@ -488,7 +499,7 @@ export default function App() {
     <div className="app">
       <TitleBar
         connected transport={transport} goingWireless={goingWireless} onGoWireless={goWireless}
-        query={query} onQuery={setQuery} onAdd={addViaDialog} onRefresh={refreshLibrary}
+        query={query} onQuery={setQuery} onAdd={addViaDialog} onRefresh={rescanLibrary}
         onSettings={() => setShowSettings(true)}
       />
 
@@ -791,7 +802,7 @@ function Settings({ onClose, toast, onReSetup }) {
       {picking && <FolderPicker start={root} onClose={() => setPicking(false)} onPick={(p) => { setRoot(p); setAuto(false); setPicking(false) }} />}
       <div className="drawer-scrim open" onClick={onClose} />
       <div className="center-stage" style={{ position: 'fixed', inset: 0, zIndex: 30 }} onClick={onClose}>
-        <div className="card">
+        <div className="card" onClick={(e) => e.stopPropagation()}>
           <h2>Settings</h2>
           <div className="field">
             <label>Music folder on device</label>
@@ -989,7 +1000,7 @@ function TitleBar({ connected, transport, goingWireless, onGoWireless, query, on
       {connected && (
         <>
           <span className="tb-sep" />
-          <button className="btn icon" onClick={onRefresh} title="Rescan library"><Icon.refresh /></button>
+          <button className="btn icon" onClick={onRefresh} title="Scan device for new music"><Icon.refresh /></button>
           <button className="btn icon" onClick={onSettings} title="Settings"><Icon.gear /></button>
           <button className="btn accent" onClick={onAdd}><Icon.plus /> Add music</button>
         </>

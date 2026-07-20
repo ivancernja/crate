@@ -288,6 +288,10 @@ ipcMain.handle('list', async () => {
   try { return ok(await withDevice((s) => adb.listTracks(s))) } catch (e) { return fail(e) }
 })
 
+ipcMain.handle('rescan', async () => {
+  try { return ok(await withDevice((s) => adb.scanNewMusic(s))) } catch (e) { return fail(e) }
+})
+
 ipcMain.handle('art', async (_e, remotePath) => {
   try { return ok(toUrl(await withDevice((s) => adb.getArt(s, remotePath)))) } catch (e) { return fail(e) }
 })

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('crate', {
   goWireless: () => invoke('go-wireless'),
   status: () => invoke('status'),
   list: () => invoke('list'),
+  rescan: () => invoke('rescan'),
   storage: () => invoke('storage'),
   listVolumes: () => invoke('list-volumes'),
   listDirs: (dir) => invoke('list-dirs', dir),

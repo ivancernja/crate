@@ -29,7 +29,7 @@ fs.mkdirSync(CACHE_DIR, { recursive: true })
 
 const MUSIC_ROOT = '/sdcard/Music'
 
-function adbRaw(args, { input, timeout = 30000, maxBuffer = 256 * 1024 * 1024 } = {}) {
+function adbRaw(args, { input, timeout = 30000, maxBuffer = 256 * 1024 * 1024, ignoreExit = false } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(ADB, ['-P', ADB_PORT, ...args], { windowsHide: true })
     const out = []
@@ -60,7 +60,7 @@ function adbRaw(args, { input, timeout = 30000, maxBuffer = 256 * 1024 * 1024 } 
     child.on('error', (e) => finish(reject, e))
     child.on('close', (code) => {
       const stderr = Buffer.concat(err).toString('utf8')
-      if (code !== 0) {
+      if (code !== 0 && !ignoreExit) {
         finish(reject, new Error(stderr.trim() || `adb exited ${code}`))
       } else {
         finish(resolve, { stdout: Buffer.concat(out), stderr })
@@ -251,6 +251,29 @@ async function defaultMusicRoot(serial) {
     if (sd) return `${sd.path}/Music`
   }
   return MUSIC_ROOT
+}
+
+// MediaStore (what Crate reads) can lag behind files added by other apps such as
+// Poweramp. Walk the storage volumes for audio files it hasn't indexed yet and
+// nudge the scanner about each one, so newly added music shows up in Crate
+async function scanNewMusic(serial) {
+  // use the real internal path, not the /sdcard symlink: find won't descend a
+  // symlinked start dir, and MediaStore reports canonical /storage paths anyway
+  const roots = (await listVolumes(serial)).map((v) => (v.path === '/sdcard' ? '/storage/emulated/0' : v.path))
+  const exts = ['flac', 'mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'alac', 'aiff', 'aif']
+  const iname = []
+  exts.forEach((e, i) => { if (i) iname.push('-o'); iname.push('-iname', `*.${e}`) })
+  // raw argv (no shell) so the globs reach find literally; ignoreExit because find
+  // returns non-zero after touching permission-protected folders like Android/
+  const out = await adb(
+    ['-s', serial, 'exec-out', 'find', ...roots, '-type', 'f', '(', ...iname, ')'],
+    { timeout: 90000, maxBuffer: 64 * 1024 * 1024, ignoreExit: true }
+  ).catch(() => '')
+  const onDisk = out.split('\n').map((s) => s.trim()).filter((p) => p.startsWith('/') && AUDIO_EXT.test(p))
+  const known = new Set((await listTracks(serial)).map((t) => t.path))
+  const fresh = onDisk.filter((p) => !known.has(p))
+  for (const p of fresh) await mediaScan(serial, p)
+  return { scanned: fresh.length }
 }
 
 async function onlineSerials() {
@@ -549,15 +572,26 @@ async function setCover(serial, trackPath, localImage) {
   return `${dir}/.crate-cover.jpg`
 }
 
-const TRASH = '/sdcard/.crate-trash'
+// keep each file's trash on the same volume, so deleting SD-card music is a fast
+// rename and not a slow cross-volume copy into internal storage
+function volumeRoot(p) {
+  const m = p.match(/^(\/storage\/[^/]+)\//)
+  if (m && m[1] !== '/storage/emulated' && m[1] !== '/storage/self') return m[1]
+  return '/sdcard'
+}
 
 // move files into a hidden trash folder so a delete can be undone
 async function softDelete(serial, remotePaths) {
-  await adb(['-s', serial, 'exec-out', 'mkdir', '-p', TRASH], { timeout: 15000 }).catch(() => {})
   const items = []
+  const madeDirs = new Set()
   for (const rp of remotePaths) {
+    const trash = `${volumeRoot(rp)}/.crate-trash`
+    if (!madeDirs.has(trash)) {
+      await adb(['-s', serial, 'exec-out', 'mkdir', '-p', trash], { timeout: 15000 }).catch(() => {})
+      madeDirs.add(trash)
+    }
     const ext = (rp.match(/\.[^./]+$/) || [''])[0]
-    const trashed = `${TRASH}/${crypto.createHash('sha1').update(rp).digest('hex')}${ext}`
+    const trashed = `${trash}/${crypto.createHash('sha1').update(rp).digest('hex')}${ext}`
     try {
       await adb(['-s', serial, 'exec-out', 'mv', rp, trashed], { timeout: 30000 })
       items.push({ original: rp, trashed })
@@ -613,6 +647,7 @@ module.exports = {
   listVolumes,
   listDirs,
   defaultMusicRoot,
+  scanNewMusic,
   phoneWifiIp,
   ensureConnected,
   onlineSerials,
