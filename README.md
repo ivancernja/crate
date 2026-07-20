@@ -16,8 +16,6 @@ Crate is free, and I plan to keep it that way. I build and maintain it on my own
 2. Open it and drag **Crate** into Applications.
 3. Launch it. A short setup wizard connects your phone (about a minute, the first time only).
 
-It's signed and notarized by Apple, so it opens without any warnings. Crate bundles `adb`, so there is nothing else to install.
-
 **Requirements:** a Mac with Apple Silicon (M1 or newer) and an Android phone. Intel Macs aren't covered by the prebuilt release yet, but you can build from source for one.
 
 ## What it does
@@ -32,13 +30,13 @@ It's signed and notarized by Apple, so it opens without any warnings. Crate bund
 
 ## How connecting works
 
-Crate uses ADB, Google's own tool, bundled inside the app.
+Crate uses ADB (Google), bundled inside the app.
 
 - The first time, plug the phone in with a USB cable. The wizard helps you turn on USB debugging (with steps for Pixel, Samsung, Xiaomi, and OnePlus) and then flips the connection to WiFi.
-- After that it reconnects over WiFi on its own whenever both devices are on the same network. Unplug the cable and forget about it.
-- On macOS 15 and later you grant Crate one Local Network permission. The wizard detects if it's blocked and shows you how to fix it.
+- After that it reconnects over WiFi on its own whenever both devices are on the same network - at this point you can unplug the cable and forget about it.
+- On macOS 15 and later you grant Crate one Local Network permission (the wizard detects if it's blocked and shows you how to fix it).
 
-It works with any Android phone, since it uses standard Android APIs. Setup menus differ a little across brands, which the wizard handles. Xiaomi/MIUI is the fussy one: it wants a Mi account and an extra "USB debugging (Security settings)" toggle before ADB works.
+It works with any Android phone, since it uses standard Android APIs. Setup menus differ a little across brands, which the wizard handles. Xiaomi/MIUI is the "fussiest" one: it requires a Mi account and an extra "USB debugging (Security settings)" toggle before ADB works.
 
 ## Privacy
 
