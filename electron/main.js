@@ -289,7 +289,11 @@ ipcMain.handle('list', async () => {
 })
 
 ipcMain.handle('rescan', async () => {
-  try { return ok(await withDevice((s) => adb.scanNewMusic(s))) } catch (e) { return fail(e) }
+  try {
+    return ok(await withDevice((s) => adb.scanNewMusic(s, (done, total) => {
+      if (win && !win.isDestroyed()) win.webContents.send('scan-progress', { done, total })
+    })))
+  } catch (e) { return fail(e) }
 })
 
 ipcMain.handle('art', async (_e, remotePath) => {

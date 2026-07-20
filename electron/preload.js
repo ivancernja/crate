@@ -11,6 +11,11 @@ contextBridge.exposeInMainWorld('crate', {
   status: () => invoke('status'),
   list: () => invoke('list'),
   rescan: () => invoke('rescan'),
+  onScanProgress: (cb) => {
+    const h = (_e, data) => cb(data)
+    ipcRenderer.on('scan-progress', h)
+    return () => ipcRenderer.off('scan-progress', h)
+  },
   storage: () => invoke('storage'),
   listVolumes: () => invoke('list-volumes'),
   listDirs: (dir) => invoke('list-dirs', dir),

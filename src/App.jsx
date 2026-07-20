@@ -36,7 +36,9 @@ export default function App() {
   const attemptedDur = useRef(new Set())
   const playerRef = useRef(null)
   const queueRef = useRef([])
+  const tracksRef = useRef([])
 
+  useEffect(() => { tracksRef.current = tracks }, [tracks])
   useEffect(() => { localStorage.setItem('crate.view', view) }, [view])
   useEffect(() => { localStorage.setItem('crate.sort', sortBy) }, [sortBy])
 
@@ -44,6 +46,12 @@ export default function App() {
     return window.crate.onAddProgress(({ done, total }) => {
       setProgress({ done, total })
       setBusyMsg(done >= total ? 'Almost done…' : `Copying to your device`)
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.crate.onScanProgress(({ done, total }) => {
+      if (total > 0) { setProgress({ done, total }); setBusyMsg('Indexing new music') }
     })
   }, [])
 
@@ -237,29 +245,35 @@ export default function App() {
   // Android scans freshly-pushed files lazily (slow for big FLACs), so re-poll
   // a few times to avoid showing a half-scanned "Unknown Album" snapshot
   const settleLibrary = useCallback(async () => {
-    let prev = null, stable = 0
+    let prev = null, stable = 0, lastLen = tracksRef.current.length
     for (const wait of [1000, 2000, 2500, 3500, 5000, 6000]) {
       await new Promise((r) => setTimeout(r, wait))
       const res = await window.crate.list()
       if (!res.ok) continue
       setTracks(res.data)
+      lastLen = res.data.length
       const unknown = res.data.filter((t) => t.album === 'Unknown Album' || !t.durationMs).length
       const sig = res.data.length + ':' + unknown
       if (sig === prev) { if (++stable >= 2) break } else stable = 0
       prev = sig
     }
+    return lastLen
   }, [])
 
   // Refresh does a deep rescan: MediaStore (what Crate reads) lags behind files
-  // added by other apps, so scan the device for anything it hasn't indexed yet
+  // added by other apps, so scan the device for anything it hasn't indexed yet.
+  // report the real change in the library, not the count of files we poked
   const rescanLibrary = useCallback(async () => {
+    const before = tracksRef.current.length
     setBusyMsg('Scanning your device for new music…'); setProgress(null)
     const res = await window.crate.rescan()
-    setBusyMsg('')
-    if (!res.ok) { toast(res.error || 'Rescan failed', 'err'); return }
-    if (res.data.scanned > 0) { toast(`Found ${fmtCount(res.data.scanned, 'new track')}, indexing…`); settleLibrary() }
-    else { refreshLibrary() }
-  }, [toast, settleLibrary, refreshLibrary])
+    if (!res.ok) { setBusyMsg(''); setProgress(null); toast(res.error || 'Rescan failed', 'err'); return }
+    const after = await settleLibrary()
+    setBusyMsg(''); setProgress(null)
+    const added = Math.max(0, after - before)
+    if (added > 0) toast(`Added ${fmtCount(added, 'new track')}`)
+    else toast('Library is up to date')
+  }, [toast, settleLibrary])
 
   useEffect(() => window.crate.onWatchPushed(({ added }) => {
     if (added) { toast(`Auto-added ${fmtCount(added, 'track')} from your watched folder`); settleLibrary() }

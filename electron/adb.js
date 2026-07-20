@@ -256,23 +256,30 @@ async function defaultMusicRoot(serial) {
 // MediaStore (what Crate reads) can lag behind files added by other apps such as
 // Poweramp. Walk the storage volumes for audio files it hasn't indexed yet and
 // nudge the scanner about each one, so newly added music shows up in Crate
-async function scanNewMusic(serial) {
+async function scanNewMusic(serial, onProgress) {
   // use the real internal path, not the /sdcard symlink: find won't descend a
   // symlinked start dir, and MediaStore reports canonical /storage paths anyway
   const roots = (await listVolumes(serial)).map((v) => (v.path === '/sdcard' ? '/storage/emulated/0' : v.path))
   const exts = ['flac', 'mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'alac', 'aiff', 'aif']
   const iname = []
   exts.forEach((e, i) => { if (i) iname.push('-o'); iname.push('-iname', `*.${e}`) })
+  iname.push('-o', '-name', '.nomedia') // pick these up too, to skip their folders
   // raw argv (no shell) so the globs reach find literally; ignoreExit because find
   // returns non-zero after touching permission-protected folders like Android/
   const out = await adb(
     ['-s', serial, 'exec-out', 'find', ...roots, '-type', 'f', '(', ...iname, ')'],
     { timeout: 90000, maxBuffer: 64 * 1024 * 1024, ignoreExit: true }
   ).catch(() => '')
-  const onDisk = out.split('\n').map((s) => s.trim()).filter((p) => p.startsWith('/') && AUDIO_EXT.test(p))
+  const lines = out.split('\n').map((s) => s.trim()).filter(Boolean)
+  // a .nomedia file marks a folder the OS scanner ignores; its audio never gets
+  // indexed, so drop it or it would count as "new" on every single scan
+  const blocked = lines.filter((l) => l.endsWith('/.nomedia')).map((l) => l.slice(0, -('.nomedia'.length)))
+  let onDisk = lines.filter((p) => p.startsWith('/') && AUDIO_EXT.test(p))
+  if (blocked.length) onDisk = onDisk.filter((p) => !blocked.some((dir) => p.startsWith(dir)))
   const known = new Set((await listTracks(serial)).map((t) => t.path))
   const fresh = onDisk.filter((p) => !known.has(p))
-  for (const p of fresh) await mediaScan(serial, p)
+  let done = 0
+  for (const p of fresh) { await mediaScan(serial, p); if (onProgress) onProgress(++done, fresh.length) }
   return { scanned: fresh.length }
 }
 
